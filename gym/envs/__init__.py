@@ -90,6 +90,18 @@ register(
     max_episode_steps=500,
 )
 
+
+# ConnectedVehicles
+# ----------------------------------------
+
+register(
+    id='Copy-v0',
+    entry_point='gym.envs.connected_vehicles:ConVehLongControl',
+    max_episode_steps=200,
+    reward_threshold=30.0,
+)
+
+
 # Box2d
 # ----------------------------------------
 

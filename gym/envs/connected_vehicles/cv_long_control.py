@@ -3,7 +3,7 @@ Longitudinal control of one Connected Vehicle
 """
 
 import gym
-from gym import spaces
+from gym import spaces, logger
 from gym.utils import seeding
 import numpy as np
 from gym.envs.connected_vehicles.assets.utils import load_dc, calc_mpg
@@ -31,11 +31,16 @@ class ConVehLongControl(gym.Env):
         self.u_min = self.min_torque/(self.mass*self.tire_radius)
         self.u_max = self.max_torque/(self.mass*self.tire_radius)
         # Relative speeds limits
-        self.dv_min = -15 * CV.MPH_TO_MPS
-        self.dv_max = 15 * CV.MPH_TO_MPS
-        # Max and minimum relative distances
-        self.dx_min = 10
-        self.dx_max = 50
+        self.dv_min_threshold = -15 * CV.MPH_TO_MPS
+        self.dv_max_threshold = 15 * CV.MPH_TO_MPS
+        # Max and minimum relative distances (thresholds)
+        self.dx_min_threshold = 10
+        self.dx_max_threshold = 50
+              
+        self.dv_min = self.dv_min_threshold
+        self.dv_max = self.dv_max_threshold
+        self.dx_min = self.dx_min_threshold
+        self.dx_max = self.dx_max_threshold
         
         # Action space box: normalized control inputs
         self.action_space = spaces.Box(low=self.u_min, high=self.u_max, shape=(1,), dtype=np.float32)
@@ -52,7 +57,9 @@ class ConVehLongControl(gym.Env):
         
         self.seed()
         self.viewer = None
-        self.state = None        
+        self.state = None  
+        
+        self.steps_beyond_done = None
         
         # Load driving cycles of the lead vehicle
         self.df_drive_lead = load_dc(self.dt)
@@ -62,7 +69,6 @@ class ConVehLongControl(gym.Env):
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
-    
     
     def step(self, action):
         dv, dx = self.state
@@ -81,15 +87,7 @@ class ConVehLongControl(gym.Env):
         
         if self.kinematics_integrator == 'euler':
             x = x + self.dt * v
-            v = v + self.dt * a
-            
-        if not done:
-            reward = calc_mpg(v, a)
-        else:
-            reward = 0
-            
-        print(reward)
-            
+            v = v + self.dt * a            
         # Next step
         self.k+=1
         v_lead = self.lead_speed[self.k] 
@@ -97,10 +95,37 @@ class ConVehLongControl(gym.Env):
         dv = v_lead = v
         dx = x_lead - x
         
+        done =  dx < self.dx_min_threshold \
+                or dx > self.dx_max_threshold \
+                or dv < self.dv_min_threshold \
+                or dv > self.dx_max_threshold       
+        done = bool(done)
+        
+        if not done:
+            reward = calc_mpg(v, a)
+        elif self.steps_beyond_done is None:
+            self.steps_beyond_done = 0
+            reward = 1.0
+        else:
+            if self.steps_beyond_done == 0:
+                logger.warn("You are calling 'step()' even though this environment has already returned done = True. You should always call 'reset()' once you receive 'done = True' -- any further steps are undefined behavior.")
+            self.steps_beyond_done += 1
+            reward = 0.0 
+            
+        print(reward)
         self.state = (dv,dx)
         
         return np.array(self.state), reward, done, {}
 
-        
+    def reset(self):
+        self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(4,))
+        self.steps_beyond_done = None
+        return np.array(self.state)   
+
+    def render(self, mode='human'):
+        pass
+
+    def close(self):
+        pass
         
         

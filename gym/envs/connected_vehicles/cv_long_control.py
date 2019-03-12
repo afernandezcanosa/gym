@@ -118,14 +118,44 @@ class ConVehLongControl(gym.Env):
         return np.array(self.state), reward, done, {}
 
     def reset(self):
-        self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(4,))
+        low = np.array([self.dv_min, self.dx_min])
+        high = np.array([self.dv_min, self.dx_min])
+        self.state = self.np_random.uniform(low=low, high=high, size=(2,))
         self.steps_beyond_done = None
-        return np.array(self.state)   
+        return np.array(self.state)
 
     def render(self, mode='human'):
-        pass
-
-    def close(self):
-        pass
+        screen_width = 600
+        screen_height = 400
         
+        world_width = (self.dx_max_threshold + 10) + (self.dx_min_threshold + 10)
+        scale = screen_width/world_width
+        cary = 100 # TOP OF CAR
+        
+        # Size of following vehicle  
+        car_width = 50.0
+        car_height = 30.0
+        
+        if self.viewer is None:
+            from gym.envs.classic_control import rendering
+            self.viewer = rendering.Viewer(screen_width, screen_height)
+            l,r,t,b = -car_width/2, car_width/2, car_height/2, -car_height/2
+            car = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
+            self.car_trans = rendering.Transform()
+            car.add_attr(self.car_trans)
+            self.viewer.add_geom(car)     
+
+        if self.state is None: return None
+
+        x = self.state
+        carx = x[1]*scale+screen_width/2.0 # MIDDLE OF CART
+        self.car_trans.set_translation(carx, cary)  
+        
+        return self.viewer.render(return_rgb_array = mode=='rgb_array')             
+        
+        
+    def close(self):
+        if self.viewer:
+            self.viewer.close()
+            self.viewer = None
         

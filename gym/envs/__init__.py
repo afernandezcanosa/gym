@@ -95,7 +95,7 @@ register(
 # ----------------------------------------
 
 register(
-    id='Copy-v0',
+    id='ConnectedVehicle-v0',
     entry_point='gym.envs.connected_vehicles:ConVehLongControl',
     max_episode_steps=200,
     reward_threshold=30.0,

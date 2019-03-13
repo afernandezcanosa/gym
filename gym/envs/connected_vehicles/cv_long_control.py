@@ -12,7 +12,7 @@ from gym.envs.connected_vehicles.assets.conversions import Conversions as CV
 class ConVehLongControl(gym.Env):
     metadata = {
         'render.modes' : ['human', 'rgb_array'],
-        'video.frames_per_second' : 30
+        'video.frames_per_second' : 10
     }
     
     def __init__(self):       
@@ -35,7 +35,9 @@ class ConVehLongControl(gym.Env):
         self.dv_max_threshold = 15 * CV.MPH_TO_MPS
         # Max and minimum relative distances (thresholds)
         self.dx_min_threshold = 10
-        self.dx_max_threshold = 50
+        self.dx_max_threshold = 30
+        self.v_min = 0
+        self.v_max = 80 * CV.MPH_TO_MPS
               
         self.dv_min = self.dv_min_threshold
         self.dv_max = self.dv_max_threshold
@@ -52,19 +54,16 @@ class ConVehLongControl(gym.Env):
         
         # Properties of the numerical_scheme
         self.dt = 0.5 # sec
-        self.kinematics_integrator = 'euler'
         self.k = 0
         
         self.seed()
         self.viewer = None
-        self.state = None  
-        
-        self.steps_beyond_done = None
         
         # Load driving cycles of the lead vehicle
-        self.df_drive_lead = load_dc(self.dt)
-        self.lead_speed = self.df_drive_lead['speed_mph'] * CV.MPH_TO_MPS
-        self.lead_dist = self.df_drive_lead['distance_m']
+        df_lead = load_dc(self.dt)
+        self.speed_lead = df_lead['speed_mph'] * CV.MPH_TO_MPS
+        self.dist_lead = df_lead['distance_m']
+
                
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -72,57 +71,62 @@ class ConVehLongControl(gym.Env):
     
     def step(self, action):
         dv, dx = self.state
-        v_lead = self.lead_speed[self.k] 
-        x_lead = self.lead_dist[self.k]
-        v = v_lead - dv
-        x = x_lead - dx
-        
-        u = np.clip(action, self.u_min, self.u_max)
-        
+        self.v_lead = self.speed_lead.iloc[self.k]
+        self.x_lead = self.dist_lead.iloc[self.k]
+        v = self.v_lead - dv
+        x = self.x_lead - dx
+#        print('x = %.2f, v = %.2f' %(x, v))
+
+        # Action
+        u = np.clip(action, self.u_min, self.u_max)[0]
         aero = (0.5/self.mass)*self.air_density*self.drag_coeff*self.front_area*v**2
         grade = 0.
-        rolling = self.mu*self.g
+        rolling = self.mu*self.g 
+        road_load = aero + rolling + grade
+        a = u - road_load
         
-        a = u + aero + rolling + grade
-        
-        if self.kinematics_integrator == 'euler':
-            x = x + self.dt * v
-            v = v + self.dt * a            
+        # Temporal step
+        x = x + self.dt * v
+        v = v + self.dt * a  
+        print('Step number: %i' %self.k)
+#        print('dx = %.2f, dv = %.2f' %(dx, dv))
+        print('speed = %.2f, accel = %.2f' %(v, a))
+   
         # Next step
         self.k+=1
-        v_lead = self.lead_speed[self.k] 
-        x_lead = self.lead_dist[self.k]
-        dv = v_lead = v
-        dx = x_lead - x
-        
+        self.x_lead = self.dist_lead.iloc[self.k]
+        self.v_lead = self.speed_lead.iloc[self.k]      
+        dv = self.v_lead - v
+        dx = self.x_lead - x
+
         done =  dx < self.dx_min_threshold \
                 or dx > self.dx_max_threshold \
                 or dv < self.dv_min_threshold \
-                or dv > self.dx_max_threshold       
+                or dv > self.dx_max_threshold \
+                or v < self.v_min \
+                or v > self.v_max
         done = bool(done)
         
         if not done:
-            reward = calc_mpg(v, a)
-        elif self.steps_beyond_done is None:
-            self.steps_beyond_done = 0
-            reward = 1.0
+            reward = calc_mpg(v, a) + 0*self.k
         else:
-            if self.steps_beyond_done == 0:
-                logger.warn("You are calling 'step()' even though this environment has already returned done = True. You should always call 'reset()' once you receive 'done = True' -- any further steps are undefined behavior.")
-            self.steps_beyond_done += 1
-            reward = 0.0 
+            self.k = 0
+            reward = -1000
             
-        print(reward)
-        self.state = (dv,dx)
+        self.state = np.array([dv, dx])
         
-        return np.array(self.state), reward, done, {}
+        return self.state, reward, done, {}
 
     def reset(self):
+        self.v_lead = self.speed_lead.iloc[self.k]
+        self.x_lead = self.dist_lead.iloc[self.k]   
         low = np.array([self.dv_min, self.dx_min])
-        high = np.array([self.dv_min, self.dx_min])
+        high = np.array([self.dv_max, self.dx_max])
         self.state = self.np_random.uniform(low=low, high=high, size=(2,))
-        self.steps_beyond_done = None
-        return np.array(self.state)
+        dv, dx = self.state
+        self.state = np.array([dv, dx])
+        print('reset')
+        return self.state
 
     def render(self, mode='human'):
         screen_width = 600
@@ -130,17 +134,18 @@ class ConVehLongControl(gym.Env):
         
         world_width = (self.dx_max_threshold + 10) + (self.dx_min_threshold + 10)
         scale = screen_width/world_width
-        cary = 100 # TOP OF CAR
+        cary = 200 # TOP OF CAR
         
         # Size of following vehicle  
-        car_width = 50.0
-        car_height = 30.0
+        car_width = 70.0
+        car_height = 40.0
         
         if self.viewer is None:
             from gym.envs.classic_control import rendering
             self.viewer = rendering.Viewer(screen_width, screen_height)
             l,r,t,b = -car_width/2, car_width/2, car_height/2, -car_height/2
             car = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
+            car.set_color(.8, .3, .3)
             self.car_trans = rendering.Transform()
             car.add_attr(self.car_trans)
             self.viewer.add_geom(car)     
@@ -148,7 +153,7 @@ class ConVehLongControl(gym.Env):
         if self.state is None: return None
 
         x = self.state
-        carx = x[1]*scale+screen_width/2.0 # MIDDLE OF CART
+        carx = screen_width - x[1]*scale # MIDDLE OF CART
         self.car_trans.set_translation(carx, cary)  
         
         return self.viewer.render(return_rgb_array = mode=='rgb_array')             

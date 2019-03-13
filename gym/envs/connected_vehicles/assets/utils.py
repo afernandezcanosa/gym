@@ -40,5 +40,4 @@ def calc_mpg(v, a):
 
 if __name__ == '__main__':
     
-    df = load_dc(0.5)
-    mpg=calc_mpg(15, 0.8)
+    mpg=calc_mpg(4.16, -2.11)

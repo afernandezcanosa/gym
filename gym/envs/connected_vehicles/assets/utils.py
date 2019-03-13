@@ -8,7 +8,7 @@ base_path = dirname(abspath(__file__))
 
 def load_dc(dt):
     df = pd.read_csv(join(base_path,'driving_cycles.csv'))
-    dt_old = 0.1
+    dt_old = 1.0
     return df[0:-1:int(dt/dt_old)].reset_index(drop = True)
 
 def calc_mpg(v, a):

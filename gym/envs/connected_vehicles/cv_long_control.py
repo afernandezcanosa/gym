@@ -53,7 +53,7 @@ class ConVehLongControl(gym.Env):
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
         
         # Properties of the numerical_scheme
-        self.dt = 0.5 # sec
+        self.dt = 1.0 # sec
         self.k = 0
         
         self.seed()
@@ -111,7 +111,7 @@ class ConVehLongControl(gym.Env):
             reward = calc_mpg(v, a) + 0*self.k
         else:
             self.k = 0
-            reward = -1000
+            reward = 0
             
         self.state = np.array([dv, dx])
         

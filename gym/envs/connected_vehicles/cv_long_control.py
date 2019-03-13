@@ -52,17 +52,19 @@ class ConVehLongControl(gym.Env):
         high = np.array([self.dv_max, self.dx_max])
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
         
-        # Properties of the numerical_scheme
-        self.dt = 1.0 # sec
-        self.k = 0
-        
         self.seed()
         self.viewer = None
+        self.dt = 1.0 # sec
         
         # Load driving cycles of the lead vehicle
         df_lead = load_dc(self.dt)
         self.speed_lead = df_lead['speed_mph'] * CV.MPH_TO_MPS
         self.dist_lead = df_lead['distance_m']
+        
+        
+        # Properties of the numerical_scheme
+        self.p = len(df_lead)
+        self.k = int(self.np_random.uniform(0, int(self.p/2), size=(1,)))
 
                
     def seed(self, seed=None):
@@ -88,9 +90,9 @@ class ConVehLongControl(gym.Env):
         # Temporal step
         x = x + self.dt * v
         v = v + self.dt * a  
-        print('Step number: %i' %self.k)
+#        print('Step number: %i' %self.k)
 #        print('dx = %.2f, dv = %.2f' %(dx, dv))
-        print('speed = %.2f, accel = %.2f' %(v, a))
+#        print('speed = %.2f, accel = %.2f' %(v, a))
    
         # Next step
         self.k+=1
@@ -101,8 +103,6 @@ class ConVehLongControl(gym.Env):
 
         done =  dx < self.dx_min_threshold \
                 or dx > self.dx_max_threshold \
-                or dv < self.dv_min_threshold \
-                or dv > self.dx_max_threshold \
                 or v < self.v_min \
                 or v > self.v_max
         done = bool(done)
@@ -110,14 +110,15 @@ class ConVehLongControl(gym.Env):
         if not done:
             reward = calc_mpg(v, a) + 0*self.k
         else:
-            self.k = 0
-            reward = 0
+            reward = -100
+            
             
         self.state = np.array([dv, dx])
         
         return self.state, reward, done, {}
 
     def reset(self):
+        self.k = int(self.np_random.uniform(0, int(self.p/2), size=(1,)))
         self.v_lead = self.speed_lead.iloc[self.k]
         self.x_lead = self.dist_lead.iloc[self.k]   
         low = np.array([self.dv_min, self.dx_min])
@@ -125,7 +126,6 @@ class ConVehLongControl(gym.Env):
         self.state = self.np_random.uniform(low=low, high=high, size=(2,))
         dv, dx = self.state
         self.state = np.array([dv, dx])
-        print('reset')
         return self.state
 
     def render(self, mode='human'):
@@ -149,12 +149,31 @@ class ConVehLongControl(gym.Env):
             self.car_trans = rendering.Transform()
             car.add_attr(self.car_trans)
             self.viewer.add_geom(car)     
-
+            
+            l,r,t,b = -2, 2, screen_height, -screen_height
+            line1 = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
+            line1.set_color(.0, .0, .0)
+            self.line1_trans = rendering.Transform()
+            line1.add_attr(self.line1_trans)
+            self.viewer.add_geom(line1)  
+            
+            l,r,t,b = -2, 2, screen_height, -screen_height
+            line2 = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
+            line2.set_color(.0, .0, .0)
+            self.line2_trans = rendering.Transform()
+            line2.add_attr(self.line2_trans)
+            self.viewer.add_geom(line2)   
+            
         if self.state is None: return None
 
+        offset = 50
         x = self.state
-        carx = screen_width - x[1]*scale # MIDDLE OF CART
-        self.car_trans.set_translation(carx, cary)  
+        carx = screen_width - x[1]*scale 
+        self.car_trans.set_translation(carx-offset, cary)  
+        
+        self.line1_trans.set_translation(screen_width -2 - offset, 0)
+        self.line2_trans.set_translation(screen_width-self.dx_max*scale - 2 - offset, 0)
+        
         
         return self.viewer.render(return_rgb_array = mode=='rgb_array')             
         
